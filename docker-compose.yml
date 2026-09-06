@@ -1,0 +1,61 @@
+x-common-env: &common-env
+  NUM_CLIENTS: "5"
+  PORT: "5000"
+  LOCAL_EPOCHS: "1"
+  BATCH_SIZE: "32"
+  LEARNING_RATE: "0.001"
+  ROUND_INTERVAL_MIN: "5"
+  ROUND_INTERVAL_MAX: "15"
+
+services:
+  client-0:
+    build: .
+    environment:
+      <<: *common-env
+      CLIENT_ID: "0"
+      PEERS: "client-1:5000,client-2:5000,client-3:5000,client-4:5000"
+    ports:
+      - "5000:5000"
+
+  client-1:
+    build: .
+    environment:
+      <<: *common-env
+      CLIENT_ID: "1"
+      PEERS: "client-0:5000,client-2:5000,client-3:5000,client-4:5000"
+    ports:
+      - "5001:5000"
+
+  client-2:
+    build: .
+    environment:
+      <<: *common-env
+      CLIENT_ID: "2"
+      PEERS: "client-0:5000,client-1:5000,client-3:5000,client-4:5000"
+    ports:
+      - "5002:5000"
+
+  client-3:
+    build: .
+    environment:
+      <<: *common-env
+      CLIENT_ID: "3"
+      PEERS: "client-0:5000,client-1:5000,client-2:5000,client-4:5000"
+    ports:
+      - "5003:5000"
+
+  client-4:
+    build: .
+    environment:
+      <<: *common-env
+      CLIENT_ID: "4"
+      PEERS: "client-0:5000,client-1:5000,client-2:5000,client-3:5000"
+    ports:
+      - "5004:5000"
+
+  dashboard:
+    image: nginx:alpine
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"

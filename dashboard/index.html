@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>BrainTorrent Monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #171a23;
+    --panel-2: #1d2130;
+    --border: #2a2f42;
+    --text: #e6e8ef;
+    --muted: #8b90a6;
+    --accent: #4fd1c5;
+    --accent-dim: #2a5a56;
+    --warn: #f6ad55;
+    --bad: #fc8181;
+    --good: #68d391;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+  }
+  header h1 { font-size: 1.15rem; margin: 0; }
+  header p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+  main {
+    display: grid;
+    grid-template-columns: minmax(340px, 480px) 1fr;
+    grid-template-rows: auto 1fr;
+    gap: 1rem;
+    padding: 1rem 1.5rem 1.5rem;
+    grid-template-areas:
+      "network feed"
+      "cards   feed";
+  }
+  @media (max-width: 980px) {
+    main {
+      grid-template-columns: 1fr;
+      grid-template-areas: "network" "cards" "feed";
+    }
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem 1rem;
+    min-width: 0;
+  }
+  section h2 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 0.6rem;
+  }
+  #network-panel { grid-area: network; }
+  #cards-panel { grid-area: cards; }
+  #feed-panel { grid-area: feed; display: flex; flex-direction: column; min-height: 0; }
+
+  svg#net-svg { width: 100%; height: auto; display: block; }
+  .edge { stroke: #333852; stroke-width: 1.5; transition: stroke 0.3s, stroke-width 0.3s; }
+  .edge.active { stroke: var(--accent); stroke-width: 3; }
+  .node circle { fill: var(--panel-2); stroke: var(--good); stroke-width: 2; }
+  .node.down circle { stroke: var(--bad); }
+  .node text { fill: var(--text); font-size: 13px; font-weight: 600; }
+  .node .node-sub { fill: var(--muted); font-size: 10px; font-weight: 400; }
+
+  #cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.7rem; }
+  .card {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.7rem 0.8rem;
+  }
+  .card.down { opacity: 0.55; }
+  .card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+  .card h3 .muted { font-weight: 400; font-size: 0.7rem; color: var(--muted); margin-left: 0.3rem; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 0.4rem; }
+  .stat-row > div { display: flex; flex-direction: column; min-width: 52px; }
+  .stat-label { font-size: 0.62rem; color: var(--muted); text-transform: uppercase; }
+  .stat-val { font-size: 1rem; font-weight: 700; color: var(--accent); }
+  .spark { display: block; margin: 0.3rem 0; }
+  .spark polyline { fill: none; stroke: var(--good); stroke-width: 2; }
+  table.vector { width: 100%; border-collapse: collapse; font-size: 0.72rem; margin-top: 0.3rem; }
+  table.vector caption { text-align: left; color: var(--muted); font-size: 0.65rem; margin-bottom: 0.2rem; }
+  table.vector td { padding: 1px 0; border-bottom: 1px dotted var(--border); }
+  table.vector td:last-child { text-align: right; color: var(--accent); font-weight: 600; }
+  .muted { color: var(--muted); }
+
+  #feed-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.78rem;
+    flex: 1;
+    min-height: 0;
+  }
+  #feed-list li {
+    padding: 0.28rem 0.2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 0.55rem;
+    align-items: baseline;
+  }
+  .ev-time { color: var(--muted); flex-shrink: 0; }
+  .ev-tag {
+    flex-shrink: 0;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    padding: 0.05rem 0.35rem;
+    border-radius: 4px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .ev-merge .ev-tag { color: var(--accent); border-color: var(--accent-dim); }
+  .ev-round_complete .ev-tag { color: var(--good); border-color: var(--good); }
+  .ev-pull_weights_failed .ev-tag, .ev-ping.ev-down .ev-tag { color: var(--bad); border-color: var(--bad); }
+  .ev-round_start .ev-tag { color: var(--warn); border-color: var(--warn); }
+  .ev-text { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <h1>BrainTorrent Monitor</h1>
+  <p>merkezi sunucu yok — her istemci kendi round'unu başlatır, peer'lardan ping/ağırlık çeker, birleştirip fine-tune eder</p>
+</header>
+<main>
+  <section id="network-panel">
+    <h2>Ağ (P2P mesh)</h2>
+    <svg id="net-svg" viewBox="0 0 600 460"></svg>
+  </section>
+  <section id="cards-panel">
+    <h2>İstemciler</h2>
+    <div id="cards"></div>
+  </section>
+  <section id="feed-panel">
+    <h2>Canlı olay akışı</h2>
+    <ul id="feed-list"></ul>
+  </section>
+</main>
+
+<script>
+const params = new URLSearchParams(location.search);
+const hosts = (params.get('hosts') ||
+  'localhost:5000,localhost:5001,localhost:5002,localhost:5003,localhost:5004').split(',');
+
+const state = {};
+hosts.forEach(h => { state[h] = { id: null, status: null, lastSeq: -1, reachable: false }; });
+
+const activeEdges = new Map(); // "id-id" -> expiry (ms epoch)
+const EDGE_HIGHLIGHT_MS = 2500;
+const feed = [];
+const MAX_FEED = 250;
+
+function peerLabel(addr) {
+  const m = /(\d+)/.exec(addr || '');
+  return m ? 'C' + m[1] : (addr || '?');
+}
+
+function edgeKey(a, b) {
+  return [String(a), String(b)].sort().join('-');
+}
+
+async function pollHost(host) {
+  const s = state[host];
+  try {
+    const statusRes = await fetch(`http://${host}/status`, { cache: 'no-store' });
+    if (!statusRes.ok) throw new Error('bad status response');
+    const status = await statusRes.json();
+    s.status = status;
+    s.id = status.id;
+    s.reachable = true;
+
+    const eventsRes = await fetch(`http://${host}/events?after=${s.lastSeq}`, { cache: 'no-store' });
+    const events = await eventsRes.json();
+    for (const ev of events) {
+      s.lastSeq = Math.max(s.lastSeq, ev.seq);
+      feed.unshift({ host, id: status.id, ...ev });
+      if (ev.type === 'merge' && Array.isArray(ev.peers)) {
+        for (const peerAddr of ev.peers) {
+          const peerId = /(\d+)/.exec(peerAddr || '');
+          if (peerId) activeEdges.set(edgeKey(status.id, peerId[1]), Date.now() + EDGE_HIGHLIGHT_MS);
+        }
+      }
+    }
+    if (feed.length > MAX_FEED) feed.length = MAX_FEED;
+  } catch (err) {
+    s.reachable = false;
+  }
+}
+
+function sparkline(values, w, h) {
+  w = w || 160; h = h || 34;
+  if (!values.length) return `<svg class="spark" width="${w}" height="${h}"></svg>`;
+  const step = w / Math.max(values.length - 1, 1);
+  const pts = values.map((v, i) => `${(i * step).toFixed(1)},${(h - v * h).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"><polyline points="${pts}" /></svg>`;
+}
+
+function formatEvent(item) {
+  const c = 'C' + item.id;
+  switch (item.type) {
+    case 'round_start':
+      return `${c} round ${item.round} başlattı (ping_request gönderiliyor)`;
+    case 'ping':
+      return item.ok
+        ? `${c} → ${peerLabel(item.peer)} ping: v=${item.version}`
+        : `${c} → ${peerLabel(item.peer)} ping: yanıt yok (peer kapalı, bu round için atlanıyor)`;
+    case 'pull_weights':
+      return `${c} ← ${peerLabel(item.peer)} ağırlık çekti (v=${item.version}, n=${item.n_samples})`;
+    case 'pull_weights_failed':
+      return `${c} ← ${peerLabel(item.peer)} ağırlık çekemedi`;
+    case 'merge': {
+      const peers = item.peers.map(peerLabel).join(', ') || '(peer yok)';
+      const ownPct = (item.own_weight * 100).toFixed(1);
+      return `${c} merge: kendi (%${ownPct}) + [${peers}] → toplam n=${item.total_samples}`;
+    }
+    case 'round_complete':
+      return `${c} round ${item.round} tamamlandı → version=${item.version}, acc=${(item.acc * 100).toFixed(2)}%`;
+    default:
+      return `${c} ${item.type}`;
+  }
+}
+
+function renderNetwork() {
+  const n = hosts.length;
+  const cx = 300, cy = 190, r = 145;
+  const nodes = hosts.map((h, i) => {
+    const angle = -Math.PI / 2 + i * (2 * Math.PI / n);
+    return {
+      host: h,
+      id: state[h].id,
+      reachable: state[h].reachable,
+      version: state[h].status ? state[h].status.version : null,
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+    };
+  });
+
+  const now = Date.now();
+  for (const [k, exp] of activeEdges) if (exp <= now) activeEdges.delete(k);
+
+  let lines = '';
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      if (a.id == null || b.id == null) continue;
+      const active = activeEdges.has(edgeKey(a.id, b.id));
+      lines += `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" class="edge${active ? ' active' : ''}" />`;
+    }
+  }
+
+  let circles = '';
+  for (const node of nodes) {
+    circles += `<g class="node${node.reachable ? '' : ' down'}">
+      <circle cx="${node.x}" cy="${node.y}" r="27" />
+      <text x="${node.x}" y="${node.y + 5}" text-anchor="middle">${node.id != null ? 'C' + node.id : '?'}</text>
+      <text x="${node.x}" y="${node.y + 44}" text-anchor="middle" class="node-sub">${node.reachable ? 'v' + node.version : 'down'}</text>
+    </g>`;
+  }
+
+  document.getElementById('net-svg').innerHTML = lines + circles;
+}
+
+function renderCards() {
+  const el = document.getElementById('cards');
+  el.innerHTML = hosts.map(h => {
+    const s = state[h];
+    if (!s.reachable || !s.status) {
+      return `<div class="card down"><h3>${h}</h3><p class="muted">erişilemiyor</p></div>`;
+    }
+    const st = s.status;
+    const accPct = st.last_acc != null ? (st.last_acc * 100).toFixed(2) + '%' : '–';
+    const vecRows = Object.entries(st.peer_last_used_version)
+      .map(([peer, v]) => `<tr><td>${peerLabel(peer)}</td><td>${v}</td></tr>`)
+      .join('') || '<tr><td class="muted">peer yok</td><td></td></tr>';
+    const spark = sparkline(st.history.map(hh => hh.acc));
+    return `<div class="card">
+      <h3>C${st.id} <span class="muted">${h}</span></h3>
+      <div class="stat-row">
+        <div><span class="stat-label">version</span><span class="stat-val">${st.version}</span></div>
+        <div><span class="stat-label">round</span><span class="stat-val">${st.round_count}</span></div>
+        <div><span class="stat-label">samples</span><span class="stat-val">${st.n_samples}</span></div>
+        <div><span class="stat-label">acc</span><span class="stat-val">${accPct}</span></div>
+      </div>
+      ${spark}
+      <table class="vector">
+        <caption>versiyon vektörü (bu istemcinin diğerleri hakkında bildiği son merge edilen versiyonlar)</caption>
+        <tbody>${vecRows}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+}
+
+function renderFeed() {
+  const el = document.getElementById('feed-list');
+  el.innerHTML = feed.map(item => {
+    const time = new Date(item.ts * 1000).toLocaleTimeString('tr-TR');
+    const cls = 'ev-' + item.type + (item.type === 'ping' && item.ok === false ? ' ev-down' : '');
+    return `<li class="ev ${cls}"><span class="ev-time">${time}</span><span class="ev-tag">${item.type}</span><span class="ev-text">${formatEvent(item)}</span></li>`;
+  }).join('');
+}
+
+async function tick() {
+  await Promise.all(hosts.map(pollHost));
+  renderNetwork();
+  renderCards();
+  renderFeed();
+}
+
+// Chained via setTimeout (not setInterval) so a slow poll never overlaps the next one —
+// overlapping polls would both read the same lastSeq and double-insert events into the feed.
+async function loop() {
+  await tick();
+  setTimeout(loop, 1000);
+}
+
+loop();
+</script>
+</body>
+</html>
